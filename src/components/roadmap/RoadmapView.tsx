@@ -97,8 +97,6 @@ Generate 4-6 phases. Include real, specific resources with actual URLs where pos
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': window.location.origin,
-        'X-Title': 'Cortex OS Roadmap',
       },
       body: JSON.stringify({
         model: FREE_MODELS[0],

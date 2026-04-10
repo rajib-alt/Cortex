@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
   Brain, BookOpen, Edit3, DollarSign, CheckSquare, TrendingUp,
@@ -40,7 +40,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (tab: string) =>
   const { entries } = useJournalStore()
   const { transactions, getMonthlyData, currency } = useFinanceStore()
   const { tasks, getOverdue } = useTasksStore()
-  const { files, tags, backlinks } = useNotesStore()
+  const { files, tags, backlinks, config, fetchFiles } = useNotesStore()
   const learningStats = useLearningStore(s => s.getStats())
   const [view, setView] = useState<'overview' | 'weekly'>('overview')
 
@@ -68,6 +68,12 @@ export default function Dashboard({ onNavigate }: { onNavigate: (tab: string) =>
     walk(files)
     return w
   }, [files])
+
+  useEffect(() => {
+    if (config && files.length === 0) {
+      fetchFiles().catch(() => {})
+    }
+  }, [config?.username, config?.repo, fetchFiles])
 
   // Streak calculation
   const journalStreak = useMemo(() => {
@@ -120,6 +126,18 @@ export default function Dashboard({ onNavigate }: { onNavigate: (tab: string) =>
         </div>
 
         {/* Alerts */}
+        {!config && (
+          <div className="flex flex-col gap-3 px-4 py-4 rounded-xl bg-secondary/70 border border-border text-sm text-foreground">
+            <div className="flex items-start gap-3">
+              <Hash className="h-4 w-4 text-primary shrink-0" />
+              <div>
+                <p className="font-semibold">Connect GitHub to load your notes</p>
+                <p className="text-xs text-muted-foreground">Enter your GitHub PAT, username, repo, and folder in Settings. Dashboards will then pull your saved notes automatically.</p>
+              </div>
+            </div>
+            <Button size="sm" onClick={() => onNavigate('settings')}>Open Settings</Button>
+          </div>
+        )}
         {overdue.length > 0 && (
           <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
             <AlertCircle className="h-4 w-4 shrink-0" />

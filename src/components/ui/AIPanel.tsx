@@ -132,8 +132,6 @@ export default function AIPanel({ open, onClose }: AIPanelProps) {
           headers: {
             'Authorization': `Bearer ${localKey}`,
             'Content-Type': 'application/json',
-            'HTTP-Referer': window.location.origin,
-            'X-Title': 'Cortex OS',
           },
           body: JSON.stringify({
             model: 'stepfun/step-3.5-flash:free',

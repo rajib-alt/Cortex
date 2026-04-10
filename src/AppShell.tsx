@@ -20,6 +20,7 @@ import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/comp
 import { cn } from '@/lib/utils'
 import { useTasksStore } from '@/store/tasksStore'
 import { useJournalStore } from '@/store/journalStore'
+import { useNotesStore } from '@/store/notesStore'
 import { useLearningStore } from '@/store/learningStore'
 import { Toaster } from 'sonner'
 
@@ -48,6 +49,8 @@ export default function AppShell() {
   const { entries } = useJournalStore()
   const learningStats = useLearningStore(s => s.getStats())
   const todayHasEntry = entries.some(e => e.date === new Date().toISOString().split('T')[0])
+  const config = useNotesStore(s => s.config)
+  const [hasPromptedGitHub, setHasPromptedGitHub] = useState(false)
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -63,6 +66,13 @@ export default function AppShell() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+
+  useEffect(() => {
+    if (!config && !hasPromptedGitHub) {
+      setHasPromptedGitHub(true)
+      setActiveTab('settings')
+    }
+  }, [config, hasPromptedGitHub])
 
   const navigate = useCallback((tab: string) => setActiveTab(tab as Tab), [])
 
