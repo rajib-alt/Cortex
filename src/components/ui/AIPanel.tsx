@@ -6,7 +6,7 @@ import { useNotesStore } from '@/store/notesStore'
 import { useJournalStore } from '@/store/journalStore'
 import { useFinanceStore } from '@/store/financeStore'
 import { useTasksStore } from '@/store/tasksStore'
-import { Button, Input } from '@/components/ui'
+import { Button, Input, Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 interface Message {
@@ -62,14 +62,21 @@ export default function AIPanel({ open, onClose }: AIPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [modelKey, setModelKey] = useState(() => localStorage.getItem('cortex-openrouter-key') || '')
   const [showKeyInput, setShowKeyInput] = useState(false)
+  const [provider, setProvider] = useState<'openrouter' | 'gemini'>('openrouter')
+  const [localKey, setLocalKey] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  const notesStore = useNotesStore()
   const { spaces } = useBlocksStore()
   const { entries } = useJournalStore()
   const { getMonthlyData, currency } = useFinanceStore()
   const { tasks } = useTasksStore()
+
+  useEffect(() => {
+    setProvider(notesStore.aiProvider || 'openrouter')
+    setLocalKey(notesStore.aiProvider === 'gemini' ? notesStore.geminiKey : notesStore.openRouterKey)
+  }, [notesStore.aiProvider, notesStore.geminiKey, notesStore.openRouterKey])
 
   const now = new Date()
   const monthly = getMonthlyData(now.getFullYear(), now.getMonth() + 1)
@@ -81,7 +88,7 @@ export default function AIPanel({ open, onClose }: AIPanelProps) {
   const sendMessage = async (text?: string) => {
     const userMsg = (text || input).trim()
     if (!userMsg) return
-    if (!modelKey) { setShowKeyInput(true); return }
+    if (!localKey) { setShowKeyInput(true); return }
 
     setInput('')
     const newMessages: Message[] = [...messages, { role: 'user', content: userMsg }]
@@ -90,27 +97,59 @@ export default function AIPanel({ open, onClose }: AIPanelProps) {
 
     try {
       const systemPrompt = buildSystemContext(spaces, entries, monthly, tasks, currency)
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${modelKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': window.location.origin,
-          'X-Title': 'Cortex OS',
-        },
-        body: JSON.stringify({
-          model: 'stepfun/step-3.5-flash:free',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...newMessages.slice(-8).map(m => ({ role: m.role, content: m.content })),
-          ],
-          max_tokens: 400,
-          temperature: 0.7,
-        }),
-      })
+      let reply = 'Sorry, I could not generate a response.'
 
-      const data = await res.json()
-      const reply = data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.'
+      if (provider === 'gemini') {
+        const res = await fetch('https://gemini.googleapis.com/v1/models/chat-bison-001:generate', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            instances: [
+              {
+                content: [
+                  { type: 'text', text: systemPrompt },
+                  ...newMessages.slice(-8).map(m => ({ type: 'text', text: `${m.role === 'user' ? 'User:' : 'Assistant:'} ${m.content}` })),
+                ],
+              },
+            ],
+            parameters: { temperature: 0.7, max_output_tokens: 400 },
+          }),
+        })
+
+        const data = await res.json()
+        const candidate = data?.candidates?.[0]
+        if (candidate?.content) {
+          reply = candidate.content.map((part: any) => part.text || '').join('')
+        } else if (data?.candidates?.[0]?.output?.[0]?.content) {
+          reply = data.candidates[0].output[0].content.map((part: any) => part.text || '').join('')
+        }
+      } else {
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': window.location.origin,
+            'X-Title': 'Cortex OS',
+          },
+          body: JSON.stringify({
+            model: 'stepfun/step-3.5-flash:free',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...newMessages.slice(-8).map(m => ({ role: m.role, content: m.content })),
+            ],
+            max_tokens: 400,
+            temperature: 0.7,
+          }),
+        })
+
+        const data = await res.json()
+        reply = data.choices?.[0]?.message?.content || reply
+      }
+
       setMessages(m => [...m, { role: 'assistant', content: reply }])
     } catch (e) {
       setMessages(m => [...m, { role: 'assistant', content: '⚠️ Error connecting to AI. Check your API key.' }])
@@ -120,7 +159,12 @@ export default function AIPanel({ open, onClose }: AIPanelProps) {
   }
 
   const saveKey = () => {
-    localStorage.setItem('cortex-openrouter-key', modelKey)
+    if (provider === 'gemini') {
+      notesStore.setGeminiKey(localKey)
+    } else {
+      notesStore.setOpenRouterKey(localKey)
+    }
+    notesStore.setAIProvider(provider)
     setShowKeyInput(false)
   }
 
@@ -135,26 +179,45 @@ export default function AIPanel({ open, onClose }: AIPanelProps) {
           {/* Header */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
             <Sparkles className="h-4 w-4 text-primary" />
-            <span className="font-heading font-semibold text-sm flex-1">AI Assistant</span>
+            <div className="flex-1">
+              <div className="font-heading font-semibold text-sm">AI Assistant</div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Provider: {provider === 'gemini' ? 'Gemini' : 'OpenRouter'}</div>
+            </div>
             <button onClick={() => setShowKeyInput(s => !s)} className="text-muted-foreground hover:text-foreground text-xs">⚙️</button>
             <Button size="icon-sm" variant="ghost" onClick={onClose}><X className="h-3.5 w-3.5" /></Button>
           </div>
 
           {/* API key input */}
           {showKeyInput && (
-            <div className="p-3 border-b border-border bg-secondary/50">
-              <p className="text-xs text-muted-foreground mb-2">OpenRouter API key</p>
-              <div className="flex gap-2">
+            <div className="p-3 border-b border-border bg-secondary/50 space-y-3">
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">AI provider</p>
+                <Select value={provider} onValueChange={v => setProvider(v as 'openrouter' | 'gemini')}>
+                  <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="openrouter">OpenRouter</SelectItem>
+                    <SelectItem value="gemini">Gemini</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">{provider === 'gemini' ? 'Gemini API key' : 'OpenRouter API key'}</p>
                 <input
-                  className="flex-1 text-xs px-2 py-1.5 rounded bg-background border border-border outline-none"
-                  placeholder="sk-or-…"
-                  value={modelKey}
-                  onChange={e => setModelKey(e.target.value)}
+                  className="w-full text-xs px-2 py-1.5 rounded bg-background border border-border outline-none"
+                  placeholder={provider === 'gemini' ? 'Gemini key' : 'sk-or-…'}
+                  value={localKey}
+                  onChange={e => setLocalKey(e.target.value)}
                   type="password"
                 />
+              </div>
+              <div className="flex gap-2">
                 <Button size="sm" onClick={saveKey}>Save</Button>
               </div>
-              <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary hover:underline mt-1 block">Get a free key →</a>
+              {provider === 'openrouter' ? (
+                <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary hover:underline block">Get a free OpenRouter API key →</a>
+              ) : (
+                <p className="text-[10px] text-muted-foreground">Use your Gemini API key to power the assistant.</p>
+              )}
             </div>
           )}
 

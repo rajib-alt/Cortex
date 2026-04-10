@@ -32,7 +32,7 @@ const FREE_MODELS = [
   'openai/gpt-oss-120b:free',
 ]
 
-async function generateRoadmap(topic: string, apiKey: string, onChunk: (t: string) => void): Promise<RoadmapData> {
+async function generateRoadmap(topic: string, apiKey: string, provider: 'openrouter' | 'gemini', onChunk: (t: string) => void): Promise<RoadmapData> {
   const systemPrompt = `You are an expert learning roadmap creator. Generate a detailed, practical learning roadmap as valid JSON only — no markdown fences, no explanation outside the JSON.
 
 The JSON must match this exact structure:
@@ -61,46 +61,77 @@ The JSON must match this exact structure:
 
 Generate 4-6 phases. Include real, specific resources with actual URLs where possible. Be opinionated and practical.`
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': window.location.origin,
-      'X-Title': 'Cortex OS Roadmap',
-    },
-    body: JSON.stringify({
-      model: FREE_MODELS[0],
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Create a comprehensive learning roadmap for: "${topic}"\n\nContext: I'm a digital marketing professional in Bangladesh working on B2B SaaS (CRM, SFA, ERP). Make it practical and career-relevant.` },
-      ],
-      stream: true,
-      max_tokens: 3000,
-      temperature: 0.7,
-    }),
-  })
-
-  if (!response.ok) throw new Error(`API error: ${response.status}`)
-
-  const reader = response.body?.getReader()
-  const decoder = new TextDecoder()
   let fullText = ''
 
-  if (reader) {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const chunk = decoder.decode(value)
-      const lines = chunk.split('\n').filter(l => l.startsWith('data: '))
-      for (const line of lines) {
-        const data = line.slice(6)
-        if (data === '[DONE]') break
-        try {
-          const parsed = JSON.parse(data)
-          const content = parsed.choices?.[0]?.delta?.content || ''
-          if (content) { fullText += content; onChunk(content) }
-        } catch {}
+  if (provider === 'gemini') {
+    const response = await fetch('https://gemini.googleapis.com/v1/models/chat-bison-001:generate', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        instances: [
+          {
+            content: [
+              { type: 'text', text: systemPrompt },
+              { type: 'text', text: `Create a comprehensive learning roadmap for: "${topic}"\n\nContext: I'm a digital marketing professional in Bangladesh working on B2B SaaS (CRM, SFA, ERP). Make it practical and career-relevant.` },
+            ],
+          },
+        ],
+        parameters: { temperature: 0.7, max_output_tokens: 3000 },
+      }),
+    })
+
+    if (!response.ok) throw new Error(`API error: ${response.status}`)
+    const data = await response.json()
+    const candidate = data?.candidates?.[0]
+    if (candidate?.content) {
+      fullText = candidate.content.map((part: any) => part.text || '').join('')
+    } else if (candidate?.output?.[0]?.content) {
+      fullText = candidate.output[0].content.map((part: any) => part.text || '').join('')
+    }
+  } else {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'Cortex OS Roadmap',
+      },
+      body: JSON.stringify({
+        model: FREE_MODELS[0],
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Create a comprehensive learning roadmap for: "${topic}"\n\nContext: I'm a digital marketing professional in Bangladesh working on B2B SaaS (CRM, SFA, ERP). Make it practical and career-relevant.` },
+        ],
+        stream: true,
+        max_tokens: 3000,
+        temperature: 0.7,
+      }),
+    })
+
+    if (!response.ok) throw new Error(`API error: ${response.status}`)
+
+    const reader = response.body?.getReader()
+    const decoder = new TextDecoder()
+
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value)
+        const lines = chunk.split('\n').filter(l => l.startsWith('data: '))
+        for (const line of lines) {
+          const data = line.slice(6)
+          if (data === '[DONE]') break
+          try {
+            const parsed = JSON.parse(data)
+            const content = parsed.choices?.[0]?.delta?.content || ''
+            if (content) { fullText += content; onChunk(content) }
+          } catch {}
+        }
       }
     }
   }
@@ -225,7 +256,7 @@ function PhaseCard({ phase, index }: { phase: RoadmapPhase; index: number }) {
 }
 
 export default function RoadmapView() {
-  const { createNote, config } = useNotesStore()
+  const { createNote, config, aiProvider, openRouterKey, geminiKey } = useNotesStore()
   const [query, setQuery] = useState('')
   const [roadmap, setRoadmap] = useState<RoadmapData | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -233,7 +264,8 @@ export default function RoadmapView() {
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const apiKey = localStorage.getItem('cortex-openrouter-key') || ''
+  const apiKey = aiProvider === 'gemini' ? geminiKey : openRouterKey
+  const provider = aiProvider || 'openrouter'
 
   const generate = async () => {
     if (!query.trim()) return
@@ -244,7 +276,7 @@ export default function RoadmapView() {
     setRoadmap(null)
     setSaved(false)
     try {
-      const result = await generateRoadmap(query.trim(), apiKey, (chunk) => {
+      const result = await generateRoadmap(query.trim(), apiKey, provider, (chunk) => {
         setStreamText(t => t + chunk)
       })
       setRoadmap(result)
@@ -294,6 +326,10 @@ export default function RoadmapView() {
         <div className="flex-1">
           <span className="font-heading font-semibold text-sm">AI Roadmap Generator</span>
           <span className="text-xs text-muted-foreground ml-2">— AI-generated learning paths, saved as notes</span>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="uppercase tracking-[0.18em]">Provider</span>
+          <span className="rounded-full bg-secondary px-2 py-1">{provider === 'gemini' ? 'Gemini' : 'OpenRouter'}</span>
         </div>
         {roadmap && (
           <Button size="sm" onClick={saveAsNote} disabled={isSaving || saved} className="gap-1.5">

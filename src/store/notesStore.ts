@@ -1,5 +1,11 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { useBlocksStore } from '@/store/blocksStore'
+import { useFinanceStore } from '@/store/financeStore'
+import { useJournalStore } from '@/store/journalStore'
+import { useTasksStore } from '@/store/tasksStore'
+import { useLearningStore } from '@/store/learningStore'
+import { saveMarkdownFile, blocksToMarkdown, financeToMarkdown, journalToMarkdown, learningToMarkdown, tasksToMarkdown } from '@/lib/githubSync'
 
 export interface NoteFile {
   path: string
@@ -124,11 +130,15 @@ interface NotesState {
   isLoading: boolean
   isSaving: boolean
   openRouterKey: string
+  geminiKey: string
+  aiProvider: 'openrouter' | 'gemini'
   searchQuery: string
   setConfig: (c: GitHubConfig) => void
   setCurrentFile: (f: NoteFile | null) => void
   setEditorContent: (c: string) => void
   setOpenRouterKey: (k: string) => void
+  setGeminiKey: (k: string) => void
+  setAIProvider: (provider: 'openrouter' | 'gemini') => void
   setSearchQuery: (q: string) => void
   fetchFiles: () => Promise<void>
   loadFile: (path: string) => Promise<void>
@@ -143,12 +153,14 @@ export const useNotesStore = create<NotesState>()(
   persist(
     (set, get) => ({
       config: null, files: [], currentFile: null, editorContent: '',
-      tags: [], backlinks: {}, isLoading: false, isSaving: false, openRouterKey: '', searchQuery: '',
+      tags: [], backlinks: {}, isLoading: false, isSaving: false, openRouterKey: '', geminiKey: '', aiProvider: 'openrouter', searchQuery: '',
 
       setConfig: (c) => set({ config: c }),
       setCurrentFile: (f) => set({ currentFile: f }),
       setEditorContent: (c) => set({ editorContent: c }),
       setOpenRouterKey: (k) => set({ openRouterKey: k }),
+      setGeminiKey: (k) => set({ geminiKey: k }),
+      setAIProvider: (provider) => set({ aiProvider: provider }),
       setSearchQuery: (q) => set({ searchQuery: q }),
 
       fetchFiles: async () => {
@@ -183,6 +195,24 @@ export const useNotesStore = create<NotesState>()(
         const data = await githubFetch(config, path)
         const content = fromBase64(data.content)
         set({ currentFile: { path, name: path.split('/').pop() || path, content, sha: data.sha }, editorContent: content })
+      },
+      syncAllToGitHub: async () => {
+        const { config } = get()
+        if (!config) return
+
+        const blocks = useBlocksStore.getState().spaces
+        const journal = useJournalStore.getState().entries
+        const finance = useFinanceStore.getState()
+        const tasks = useTasksStore.getState().tasks
+        const learning = useLearningStore.getState().items
+
+        await saveMarkdownFile(config, `${ROOT(config)}/data/thoughts.md`, blocksToMarkdown(blocks), 'Sync Cortex thoughts to GitHub')
+        await saveMarkdownFile(config, `${ROOT(config)}/data/journal.md`, journalToMarkdown(journal), 'Sync Cortex journal to GitHub')
+        await saveMarkdownFile(config, `${ROOT(config)}/data/finance.md`, financeToMarkdown(finance.transactions, finance.budgets, finance.savingsGoals, finance.currency), 'Sync Cortex finance data to GitHub')
+        await saveMarkdownFile(config, `${ROOT(config)}/data/tasks.md`, tasksToMarkdown(tasks), 'Sync Cortex tasks to GitHub')
+        await saveMarkdownFile(config, `${ROOT(config)}/data/learning.md`, learningToMarkdown(learning), 'Sync Cortex learning data to GitHub')
+
+        await get().fetchFiles()
       },
 
       saveFile: async (path?, content?) => {
@@ -247,6 +277,6 @@ export const useNotesStore = create<NotesState>()(
         return all
       },
     }),
-    { name: 'cortex-notes', partialize: (s) => ({ config: s.config, openRouterKey: s.openRouterKey }) }
+    { name: 'cortex-notes', partialize: (s) => ({ config: s.config, openRouterKey: s.openRouterKey, geminiKey: s.geminiKey, aiProvider: s.aiProvider }) }
   )
 )

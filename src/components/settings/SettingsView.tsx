@@ -49,20 +49,39 @@ export default function SettingsView() {
   const [username, setUsername] = useState(notesStore.config?.username || '')
   const [repo, setRepo] = useState(notesStore.config?.repo || '')
 
-  // AI key
-  const [aiKey, setAiKey] = useState(() => localStorage.getItem('cortex-openrouter-key') || '')
+  // AI key and provider
+  const [aiProvider, setAIProvider] = useState<'openrouter' | 'gemini'>(notesStore.aiProvider || 'openrouter')
+  const [openRouterKey, setOpenRouterKey] = useState(notesStore.openRouterKey || '')
+  const [geminiKey, setGeminiKey] = useState(notesStore.geminiKey || '')
 
   // Currency
   const [currency, setCurrency] = useState(financeStore.currency)
 
   const [saved, setSaved] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
   const saveGitHub = () => {
     if (pat && username && repo) notesStore.setConfig({ pat, username, repo })
-    localStorage.setItem('cortex-openrouter-key', aiKey)
+    notesStore.setOpenRouterKey(openRouterKey)
+    notesStore.setGeminiKey(geminiKey)
+    notesStore.setAIProvider(aiProvider)
     financeStore.setCurrency(currency)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+  }
+
+  const syncAllToGitHub = async () => {
+    if (!notesStore.config) { alert('Set your GitHub repo config first.'); return }
+    setSyncing(true)
+    try {
+      await notesStore.syncAllToGitHub()
+      alert('All app data synced to GitHub as markdown files.')
+    } catch (e: any) {
+      console.error(e)
+      alert(`Sync failed: ${e.message || 'Unknown error'}`)
+    } finally {
+      setSyncing(false)
+    }
   }
 
   // Export all data
@@ -138,13 +157,34 @@ export default function SettingsView() {
           {notesStore.config && (
             <p className="text-xs text-green-400">✓ Connected to {notesStore.config.username}/{notesStore.config.repo}</p>
           )}
+          <Button variant="outline" className="w-full mt-3" onClick={syncAllToGitHub} disabled={syncing}>
+            {syncing ? 'Syncing all data…' : 'Sync all data to GitHub as markdown'}
+          </Button>
         </Section>
 
         {/* AI Assistant */}
         <Section title="AI Assistant" icon={Key}>
-          <p className="text-xs text-muted-foreground">OpenRouter API key for the AI Assistant panel. Uses the free <code className="font-mono">stepfun/step-3.5-flash:free</code> model by default.</p>
-          <Input placeholder="sk-or-…" value={aiKey} onChange={e => setAiKey(e.target.value)} type="password" />
-          <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">Get a free OpenRouter API key →</a>
+          <p className="text-xs text-muted-foreground">Use OpenRouter or Gemini for AI replies. Save your chosen provider and key here.</p>
+          <Row label="Provider">
+            <Select value={aiProvider} onValueChange={v => setAIProvider(v as 'openrouter' | 'gemini')}>
+              <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="openrouter">OpenRouter</SelectItem>
+                <SelectItem value="gemini">Gemini</SelectItem>
+              </SelectContent>
+            </Select>
+          </Row>
+          {aiProvider === 'openrouter' ? (
+            <>
+              <Input placeholder="sk-or-…" value={openRouterKey} onChange={e => setOpenRouterKey(e.target.value)} type="password" />
+              <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">Get a free OpenRouter API key →</a>
+            </>
+          ) : (
+            <>
+              <Input placeholder="Gemini API key" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} type="password" />
+              <p className="text-xs text-muted-foreground">Use your Gemini key for AI assistant responses.</p>
+            </>
+          )}
         </Section>
 
         {/* Finance */}
