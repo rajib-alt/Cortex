@@ -199,13 +199,23 @@ export function NotesEditor() {
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{editorContent}</ReactMarkdown>
             </div>
           ) : (
-            <textarea
-              value={editorContent}
-              onChange={e => handleChange(e.target.value)}
-              className="w-full h-full min-h-full px-6 py-4 bg-transparent text-sm text-foreground font-mono leading-relaxed outline-none resize-none"
-              placeholder={`---\ntitle: Your Note Title\ntags: [tag1, tag2]\ntype: note\n---\n\n# Your Note Title\n\nWrite your note here…\n\n## Observations\n- [insight] Key fact #tag\n\n## Relations\n- relates_to [[Other Note]]`}
-              spellCheck={false}
-            />
+            <div className="h-full min-h-full">
+              <CodeMirror
+                value={editorContent}
+                height="100%"
+                extensions={[markdown()]}
+                onChange={(value) => handleChange(value)}
+                theme="light"
+                basicSetup={{
+                  lineNumbers: true,
+                  highlightActiveLine: true,
+                  highlightActiveLineGutter: true,
+                  foldGutter: true,
+                }}
+                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' }}
+                placeholder={`---\ntitle: Your Note Title\ntags: [tag1, tag2]\ntype: note\n---\n\n# Your Note Title\n\nWrite your note here…\n\n## Observations\n- [insight] Key fact #tag\n\n## Relations\n- relates_to [[Other Note]]`}
+              />
+            </div>
           )}
         </div>
 
