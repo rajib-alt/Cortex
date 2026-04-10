@@ -216,6 +216,7 @@ export default function AIPanel({ open, onClose }: AIPanelProps) {
                   </SelectContent>
                 </Select>
               </div>
+              <p className="text-[10px] text-muted-foreground">Note: Gemini often does not work directly from the browser due to CORS restrictions. OpenRouter is more reliable for in-browser AI.</p>
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">{provider === 'gemini' ? 'Gemini API key' : 'OpenRouter API key'}</p>
                 <input

@@ -107,19 +107,23 @@ Generate 4-6 phases. Include real, specific resources with actual URLs where pos
         usedProvider = 'openrouter'
         errorHint = 'Gemini browser requests are often blocked by CORS/network restrictions. Falling back to OpenRouter.'
       } else {
-        throw new Error(message || 'Gemini request failed. Gemini is not reliably available from the browser without a proxy. Use OpenRouter or a server-side proxy.')
+        throw new Error('Gemini browser requests are not supported directly by many browsers due to CORS restrictions. Please switch to OpenRouter or use a server-side proxy.')
       }
     }
   }
 
   if (usedProvider === 'openrouter') {
+    const authKey = fallbackOpenRouterKey || apiKey
+    if (!authKey) {
+      throw new Error('OpenRouter API key required to generate a roadmap when Gemini is unavailable from the browser. Please add an OpenRouter key in Settings.')
+    }
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       mode: 'cors',
       cache: 'no-cache',
       redirect: 'follow',
       headers: {
-        'Authorization': `Bearer ${usedProvider === 'openrouter' ? (fallbackOpenRouterKey || apiKey) : apiKey}`,
+        'Authorization': `Bearer ${authKey}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
@@ -144,6 +148,9 @@ Generate 4-6 phases. Include real, specific resources with actual URLs where pos
     if (content) {
       fullText = content
       onChunk(content)
+    }
+    if (errorHint) {
+      onChunk(`\n${errorHint}\n`)
     }
   }
 
@@ -294,7 +301,7 @@ export default function RoadmapView() {
     setRoadmap(null)
     setSaved(false)
     try {
-      const result = await generateRoadmap(query.trim(), apiKey, provider, (chunk) => {
+          const result = await generateRoadmap(query.trim(), apiKey, provider, (chunk) => {
         setStreamText(t => t + chunk)
       }, openRouterKey)
       setRoadmap(result)
@@ -375,6 +382,11 @@ export default function RoadmapView() {
                 className="text-sm"
                 disabled={isGenerating}
               />
+              {provider === 'gemini' && (
+                <div className="rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-xs text-amber-700">
+                  Gemini often fails from the browser due to CORS. For the most reliable roadmap generation, use OpenRouter or add an OpenRouter API key in Settings.
+                </div>
+              )}
               <Button onClick={generate} disabled={isGenerating || !query.trim()} className="gap-2 shrink-0">
                 {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 {isGenerating ? 'Generating…' : 'Generate'}
