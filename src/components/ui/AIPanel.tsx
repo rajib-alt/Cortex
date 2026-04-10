@@ -102,9 +102,13 @@ export default function AIPanel({ open, onClose }: AIPanelProps) {
       if (provider === 'gemini') {
         const res = await fetch('https://gemini.googleapis.com/v1/models/chat-bison-001:generate', {
           method: 'POST',
+          mode: 'cors',
+          cache: 'no-cache',
+          redirect: 'follow',
           headers: {
             'Authorization': `Bearer ${localKey}`,
             'Content-Type': 'application/json',
+            Accept: 'application/json',
           },
           body: JSON.stringify({
             instances: [
@@ -119,6 +123,11 @@ export default function AIPanel({ open, onClose }: AIPanelProps) {
           }),
         })
 
+        if (!res.ok) {
+          const bodyText = await res.text().catch(() => '')
+          throw new Error(`Gemini API error: ${res.status}${bodyText ? ` — ${bodyText}` : ''}`)
+        }
+
         const data = await res.json()
         const candidate = data?.candidates?.[0]
         if (candidate?.content) {
@@ -129,9 +138,13 @@ export default function AIPanel({ open, onClose }: AIPanelProps) {
       } else {
         const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
+          mode: 'cors',
+          cache: 'no-cache',
+          redirect: 'follow',
           headers: {
             'Authorization': `Bearer ${localKey}`,
             'Content-Type': 'application/json',
+            Accept: 'application/json',
           },
           body: JSON.stringify({
             model: 'stepfun/step-3.5-flash:free',
@@ -143,6 +156,11 @@ export default function AIPanel({ open, onClose }: AIPanelProps) {
             temperature: 0.7,
           }),
         })
+
+        if (!res.ok) {
+          const bodyText = await res.text().catch(() => '')
+          throw new Error(`OpenRouter API error: ${res.status}${bodyText ? ` — ${bodyText}` : ''}`)
+        }
 
         const data = await res.json()
         reply = data.choices?.[0]?.message?.content || reply

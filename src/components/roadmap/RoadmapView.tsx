@@ -66,9 +66,13 @@ Generate 4-6 phases. Include real, specific resources with actual URLs where pos
   if (provider === 'gemini') {
     const response = await fetch('https://gemini.googleapis.com/v1/models/chat-bison-001:generate', {
       method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      redirect: 'follow',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        Accept: 'application/json',
       },
       body: JSON.stringify({
         instances: [
@@ -94,9 +98,13 @@ Generate 4-6 phases. Include real, specific resources with actual URLs where pos
   } else {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      redirect: 'follow',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        Accept: 'application/json',
       },
       body: JSON.stringify({
         model: FREE_MODELS[0],
@@ -255,7 +263,10 @@ export default function RoadmapView() {
 
   const generate = async () => {
     if (!query.trim()) return
-    if (!apiKey) { setError('Set your OpenRouter API key in Settings first'); return }
+    if (!apiKey) {
+      setError(provider === 'gemini' ? 'Set your Gemini API key in Settings first' : 'Set your OpenRouter API key in Settings first')
+      return
+    }
     setIsGenerating(true)
     setStreamText('')
     setError('')
@@ -267,7 +278,12 @@ export default function RoadmapView() {
       })
       setRoadmap(result)
     } catch (e: any) {
-      setError(e.message || 'Failed to generate roadmap. Try a different model key.')
+      const message = e?.message || 'Failed to generate roadmap. Try a different model key.'
+      if (provider === 'gemini' && message.toLowerCase().includes('failed to fetch')) {
+        setError('Gemini request failed. Browser-based Gemini calls may be blocked by CORS or network restrictions. ' + message)
+      } else {
+        setError(message)
+      }
     } finally {
       setIsGenerating(false)
       setStreamText('')
