@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { generateId } from '@/lib/utils'
 
 export interface NoteFile {
   path: string
@@ -15,6 +14,7 @@ export interface GitHubConfig {
   pat: string
   username: string
   repo: string
+  rootFolder?: string   // defaults to "markdownlod"
 }
 
 export interface BacklinkMap {
@@ -23,6 +23,7 @@ export interface BacklinkMap {
 
 const toBase64 = (str: string) => btoa(unescape(encodeURIComponent(str)))
 const fromBase64 = (str: string) => decodeURIComponent(escape(atob(str)))
+const ROOT = (c: GitHubConfig) => c.rootFolder || 'markdownlod'
 
 async function githubFetch(config: GitHubConfig, path: string, options?: RequestInit) {
   const url = `https://api.github.com/repos/${config.username}/${config.repo}/contents/${path}`
@@ -39,7 +40,18 @@ async function githubFetch(config: GitHubConfig, path: string, options?: Request
   return res.json()
 }
 
+async function githubDelete(config: GitHubConfig, path: string, sha: string) {
+  const url = `https://api.github.com/repos/${config.username}/${config.repo}/contents/${path}`
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${config.pat}`, Accept: 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: `Delete ${path}`, sha }),
+  })
+  if (!res.ok) throw new Error(`GitHub delete error: ${res.status}`)
+}
+
 async function fetchTree(config: GitHubConfig): Promise<NoteFile[]> {
+  const root = ROOT(config)
   const buildTree = async (path: string): Promise<NoteFile[]> => {
     const items = await githubFetch(config, path)
     const result: NoteFile[] = []
@@ -57,7 +69,7 @@ async function fetchTree(config: GitHubConfig): Promise<NoteFile[]> {
       return a.name.localeCompare(b.name)
     })
   }
-  try { return await buildTree('') } catch { return [] }
+  try { return await buildTree(root) } catch { return [] }
 }
 
 function extractTags(files: NoteFile[]): string[] {
@@ -75,12 +87,7 @@ function extractTags(files: NoteFile[]): string[] {
 function buildBacklinks(files: NoteFile[]): BacklinkMap {
   const map: BacklinkMap = {}
   const allFiles: NoteFile[] = []
-  const walk = (nodes: NoteFile[]) => {
-    for (const n of nodes) {
-      if (!n.isFolder) allFiles.push(n)
-      if (n.children) walk(n.children)
-    }
-  }
+  const walk = (nodes: NoteFile[]) => { for (const n of nodes) { if (!n.isFolder) allFiles.push(n); if (n.children) walk(n.children) } }
   walk(files)
   for (const file of allFiles) {
     if (!file.content) continue
@@ -94,6 +101,17 @@ function buildBacklinks(files: NoteFile[]): BacklinkMap {
     }
   }
   return map
+}
+
+function toSlug(title: string): string {
+  return title.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').slice(0, 80)
+}
+
+function buildPath(config: GitHubConfig, folder: string, title: string): string {
+  const root = ROOT(config)
+  const slug = toSlug(title)
+  if (folder) return `${root}/${folder}/${slug}.md`
+  return `${root}/${slug}.md`
 }
 
 interface NotesState {
@@ -115,7 +133,7 @@ interface NotesState {
   fetchFiles: () => Promise<void>
   loadFile: (path: string) => Promise<void>
   saveFile: (path?: string, content?: string) => Promise<void>
-  createNote: (name: string, folder?: string) => Promise<void>
+  createNote: (opts: { title: string; folder?: string; tags?: string[]; content: string }) => Promise<string>
   deleteFile: (path: string) => Promise<void>
   moveFile: (oldPath: string, newPath: string, content: string) => Promise<void>
   getAllNotes: () => NoteFile[]
@@ -124,16 +142,8 @@ interface NotesState {
 export const useNotesStore = create<NotesState>()(
   persist(
     (set, get) => ({
-      config: null,
-      files: [],
-      currentFile: null,
-      editorContent: '',
-      tags: [],
-      backlinks: {},
-      isLoading: false,
-      isSaving: false,
-      openRouterKey: '',
-      searchQuery: '',
+      config: null, files: [], currentFile: null, editorContent: '',
+      tags: [], backlinks: {}, isLoading: false, isSaving: false, openRouterKey: '', searchQuery: '',
 
       setConfig: (c) => set({ config: c }),
       setCurrentFile: (f) => set({ currentFile: f }),
@@ -193,22 +203,23 @@ export const useNotesStore = create<NotesState>()(
         finally { set({ isSaving: false }) }
       },
 
-      createNote: async (name, folder?) => {
-        const path = folder ? `${folder}/${name}.md` : `${name}.md`
-        await get().saveFile(path, `# ${name}\n\n`)
+      createNote: async ({ title, folder = '', tags = [], content }) => {
+        const { config } = get()
+        if (!config) throw new Error('No GitHub config')
+        const path = buildPath(config, folder, title)
+        const tagsYaml = tags.length > 0 ? `[${tags.join(', ')}]` : '[]'
+        const fullContent = `---\ntitle: ${title}\ntags: ${tagsYaml}\ntype: note\n---\n\n${content}`
+        await get().saveFile(path, fullContent)
         await get().fetchFiles()
         await get().loadFile(path)
+        return path
       },
 
       deleteFile: async (path) => {
         const { config, currentFile } = get()
         if (!config) return
         const data = await githubFetch(config, path)
-        await fetch(`https://api.github.com/repos/${config.username}/${config.repo}/contents/${path}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${config.pat}`, Accept: 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: `Delete ${path}`, sha: data.sha }),
-        })
+        await githubDelete(config, path, data.sha)
         if (currentFile?.path === path) set({ currentFile: null, editorContent: '' })
         await get().fetchFiles()
       },
@@ -223,11 +234,7 @@ export const useNotesStore = create<NotesState>()(
           body: JSON.stringify({ message: `Move ${oldPath} to ${newPath}`, content: toBase64(content), ...(sha ? { sha } : {}) }),
         })
         const oldData = await githubFetch(config, oldPath)
-        await fetch(`https://api.github.com/repos/${config.username}/${config.repo}/contents/${oldPath}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${config.pat}`, Accept: 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: `Delete ${oldPath}`, sha: oldData.sha }),
-        })
+        await githubDelete(config, oldPath, oldData.sha)
         set({ currentFile: null, editorContent: '' })
         await get().fetchFiles()
         await get().loadFile(newPath)
@@ -235,12 +242,7 @@ export const useNotesStore = create<NotesState>()(
 
       getAllNotes: () => {
         const all: NoteFile[] = []
-        const walk = (nodes: NoteFile[]) => {
-          for (const n of nodes) {
-            if (!n.isFolder) all.push(n)
-            if (n.children) walk(n.children)
-          }
-        }
+        const walk = (nodes: NoteFile[]) => { for (const n of nodes) { if (!n.isFolder) all.push(n); if (n.children) walk(n.children) } }
         walk(get().files)
         return all
       },

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Home, Brain, FileText, Edit3, DollarSign, CheckSquare,
-  ChevronRight, Layers, Sparkles, Share2, Command, GraduationCap, Settings
+  ChevronRight, Layers, Sparkles, Share2, Command, GraduationCap, Settings, Map
 } from 'lucide-react'
 import Dashboard from '@/components/dashboard/Dashboard'
 import BlocksView from '@/components/blocks/BlocksView'
@@ -11,6 +11,7 @@ import FinanceDashboard from '@/components/finance/FinanceDashboard'
 import TasksView from '@/components/dashboard/TasksView'
 import LearningView from '@/components/learning/LearningView'
 import SettingsView from '@/components/settings/SettingsView'
+import RoadmapView from '@/components/roadmap/RoadmapView'
 import { NotesSidebar, NotesEditor, NotesSettingsModal } from '@/components/notes/NotesComponents'
 import GraphView from '@/components/notes/GraphView'
 import CommandPalette from '@/components/ui/CommandPalette'
@@ -22,7 +23,7 @@ import { useJournalStore } from '@/store/journalStore'
 import { useLearningStore } from '@/store/learningStore'
 import { Toaster } from 'sonner'
 
-export type Tab = 'home' | 'thoughts' | 'notes' | 'journal' | 'finance' | 'tasks' | 'learning' | 'graph' | 'settings'
+export type Tab = 'home' | 'thoughts' | 'notes' | 'journal' | 'finance' | 'tasks' | 'learning' | 'roadmap' | 'graph' | 'settings'
 
 const NAV_ITEMS: { id: Tab; icon: any; label: string; color: string; shortcut: string }[] = [
   { id: 'home',     icon: Home,          label: 'Dashboard', color: 'text-foreground',  shortcut: '1' },
@@ -32,7 +33,8 @@ const NAV_ITEMS: { id: Tab; icon: any; label: string; color: string; shortcut: s
   { id: 'finance',  icon: DollarSign,    label: 'Finance',   color: 'text-primary',     shortcut: '5' },
   { id: 'tasks',    icon: CheckSquare,   label: 'Tasks',     color: 'text-green-400',   shortcut: '6' },
   { id: 'learning', icon: GraduationCap, label: 'Learning',  color: 'text-teal-400',    shortcut: '7' },
-  { id: 'graph',    icon: Share2,        label: 'Graph',     color: 'text-purple-400',  shortcut: '8' },
+  { id: 'roadmap',  icon: Map,           label: 'Roadmap',   color: 'text-orange-400',  shortcut: '8' },
+  { id: 'graph',    icon: Share2,        label: 'Graph',     color: 'text-purple-400',  shortcut: '9' },
 ]
 
 export default function AppShell() {
@@ -55,7 +57,7 @@ export default function AppShell() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return
       if (!e.metaKey && !e.ctrlKey && !e.altKey) {
         const num = parseInt(e.key)
-        if (num >= 1 && num <= 8) { const tab = NAV_ITEMS[num - 1]?.id; if (tab) setActiveTab(tab) }
+        if (num >= 1 && num <= 9) { const tab = NAV_ITEMS[num - 1]?.id; if (tab) setActiveTab(tab) }
       }
     }
     window.addEventListener('keydown', handler)
@@ -90,58 +92,37 @@ export default function AppShell() {
             </button>
           </div>
 
-          {/* Search shortcut */}
+          {/* ⌘K search */}
           {!collapsed && (
-            <button
-              onClick={() => setShowCommandPalette(true)}
-              className="mx-2 mt-2 mb-1 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-secondary/50 text-xs text-muted-foreground hover:bg-secondary transition-colors"
-            >
+            <button onClick={() => setShowCommandPalette(true)} className="mx-2 mt-2 mb-1 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-secondary/50 text-xs text-muted-foreground hover:bg-secondary transition-colors">
               <Command className="h-3 w-3 shrink-0" />
               <span className="flex-1 text-left">Search everything…</span>
               <kbd className="text-[9px] bg-background rounded px-1 border border-border py-0.5">⌘K</kbd>
             </button>
           )}
 
-          {/* Nav items */}
+          {/* Nav */}
           <div className="flex-1 py-2 space-y-0.5 px-2 overflow-y-auto">
             {NAV_ITEMS.map(item => {
               const isActive = activeTab === item.id
               const badge = getBadge(item.id)
-
               if (collapsed) return (
                 <Tooltip key={item.id}>
                   <TooltipTrigger asChild>
-                    <button
-                      onClick={() => setActiveTab(item.id)}
-                      className={cn('relative w-full h-9 flex items-center justify-center rounded-lg transition-colors', isActive ? 'bg-primary/10' : 'hover:bg-secondary')}
-                    >
+                    <button onClick={() => setActiveTab(item.id)} className={cn('relative w-full h-9 flex items-center justify-center rounded-lg transition-colors', isActive ? 'bg-primary/10' : 'hover:bg-secondary')}>
                       <item.icon className={cn('h-4 w-4', isActive ? item.color : 'text-muted-foreground')} />
-                      {badge && (
-                        <span className="absolute top-0.5 right-0.5 h-3.5 min-w-3.5 px-0.5 bg-destructive rounded-full text-[8px] text-white flex items-center justify-center leading-none">
-                          {badge}
-                        </span>
-                      )}
+                      {badge && <span className="absolute top-0.5 right-0.5 h-3.5 min-w-3.5 px-0.5 bg-destructive rounded-full text-[8px] text-white flex items-center justify-center leading-none">{badge}</span>}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right">{item.label} <kbd className="ml-1 text-[9px] opacity-60">{item.shortcut}</kbd></TooltipContent>
                 </Tooltip>
               )
-
               return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={cn(
-                    'relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors',
-                    isActive ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                  )}
-                >
+                <button key={item.id} onClick={() => setActiveTab(item.id)} className={cn('relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors', isActive ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground')}>
                   <item.icon className={cn('h-4 w-4 shrink-0', isActive ? item.color : '')} />
                   <span className="flex-1 text-left">{item.label}</span>
                   {badge ? (
-                    <span className="h-4 min-w-4 px-1 bg-destructive rounded-full text-[9px] text-white flex items-center justify-center leading-none">
-                      {badge}
-                    </span>
+                    <span className="h-4 min-w-4 px-1 bg-destructive rounded-full text-[9px] text-white flex items-center justify-center leading-none">{badge}</span>
                   ) : (
                     <kbd className="text-[9px] text-muted-foreground/40">{item.shortcut}</kbd>
                   )}
@@ -152,53 +133,45 @@ export default function AppShell() {
 
           {/* Bottom: AI + Settings */}
           <div className="p-2 border-t border-border space-y-0.5">
-            {/* AI */}
             {collapsed ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button onClick={() => setShowAI(s => !s)} className={cn('w-full h-9 flex items-center justify-center rounded-lg transition-colors', showAI ? 'bg-primary/10' : 'hover:bg-secondary')}>
-                    <Sparkles className={cn('h-4 w-4', showAI ? 'text-primary' : 'text-muted-foreground')} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">AI Assistant ⌘/</TooltipContent>
-              </Tooltip>
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button onClick={() => setShowAI(s => !s)} className={cn('w-full h-9 flex items-center justify-center rounded-lg transition-colors', showAI ? 'bg-primary/10' : 'hover:bg-secondary')}>
+                      <Sparkles className={cn('h-4 w-4', showAI ? 'text-primary' : 'text-muted-foreground')} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">AI Assistant ⌘/</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button onClick={() => setActiveTab('settings')} className={cn('w-full h-9 flex items-center justify-center rounded-lg transition-colors', activeTab === 'settings' ? 'bg-primary/10' : 'hover:bg-secondary')}>
+                      <Settings className={cn('h-4 w-4', activeTab === 'settings' ? 'text-primary' : 'text-muted-foreground')} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Settings</TooltipContent>
+                </Tooltip>
+              </>
             ) : (
-              <button onClick={() => setShowAI(s => !s)} className={cn('w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors', showAI ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground')}>
-                <Sparkles className="h-4 w-4 shrink-0" />
-                <span className="flex-1 text-left">AI Assistant</span>
-                <kbd className="text-[9px] text-muted-foreground/40">⌘/</kbd>
-              </button>
-            )}
-            {/* Settings */}
-            {collapsed ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button onClick={() => setActiveTab('settings')} className={cn('w-full h-9 flex items-center justify-center rounded-lg transition-colors', activeTab === 'settings' ? 'bg-primary/10' : 'hover:bg-secondary')}>
-                    <Settings className={cn('h-4 w-4', activeTab === 'settings' ? 'text-primary' : 'text-muted-foreground')} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">Settings</TooltipContent>
-              </Tooltip>
-            ) : (
-              <button onClick={() => setActiveTab('settings')} className={cn('w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors', activeTab === 'settings' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground')}>
-                <Settings className={cn('h-4 w-4 shrink-0', activeTab === 'settings' ? 'text-primary' : '')} />
-                <span className="flex-1 text-left">Settings</span>
-              </button>
+              <>
+                <button onClick={() => setShowAI(s => !s)} className={cn('w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors', showAI ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground')}>
+                  <Sparkles className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 text-left">AI Assistant</span>
+                  <kbd className="text-[9px] text-muted-foreground/40">⌘/</kbd>
+                </button>
+                <button onClick={() => setActiveTab('settings')} className={cn('w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors', activeTab === 'settings' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground')}>
+                  <Settings className={cn('h-4 w-4 shrink-0', activeTab === 'settings' ? 'text-primary' : '')} />
+                  <span className="flex-1 text-left">Settings</span>
+                </button>
+              </>
             )}
           </div>
         </nav>
 
-        {/* Main content area */}
+        {/* Main content */}
         <div className="flex-1 flex overflow-hidden relative">
           <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, x: 6 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -6 }}
-              transition={{ duration: 0.12, ease: 'easeOut' }}
-              className="flex-1 overflow-hidden flex"
-            >
+            <motion.div key={activeTab} initial={{ opacity: 0, x: 6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -6 }} transition={{ duration: 0.12, ease: 'easeOut' }} className="flex-1 overflow-hidden flex">
               {activeTab === 'home'     && <Dashboard onNavigate={navigate} />}
               {activeTab === 'thoughts' && <BlocksView />}
               {activeTab === 'notes'    && (
@@ -211,43 +184,27 @@ export default function AppShell() {
               {activeTab === 'finance'  && <FinanceDashboard />}
               {activeTab === 'tasks'    && <TasksView />}
               {activeTab === 'learning' && <LearningView />}
+              {activeTab === 'roadmap'  && <RoadmapView />}
               {activeTab === 'settings' && <SettingsView />}
               {activeTab === 'graph'    && (
                 <div className="flex-1 flex flex-col overflow-hidden">
                   <div className="px-4 py-3 border-b border-border flex items-center gap-2 shrink-0">
                     <Share2 className="h-4 w-4 text-purple-400" />
                     <span className="font-heading font-semibold text-sm">Knowledge Graph</span>
-                    <span className="text-xs text-muted-foreground ml-1">— all notes, thoughts & tags</span>
+                    <span className="text-xs text-muted-foreground ml-1">— notes, thoughts & tags</span>
                   </div>
                   <div className="flex-1 overflow-hidden"><GraphView /></div>
                 </div>
               )}
             </motion.div>
           </AnimatePresence>
-
-          {/* AI Panel sliding in from the right */}
           <AIPanel open={showAI} onClose={() => setShowAI(false)} />
         </div>
       </div>
 
-      {/* Global overlays */}
-      <CommandPalette
-        open={showCommandPalette}
-        onClose={() => setShowCommandPalette(false)}
-        onNavigate={navigate}
-      />
+      <CommandPalette open={showCommandPalette} onClose={() => setShowCommandPalette(false)} onNavigate={navigate} />
       <NotesSettingsModal open={showNotesSettings} onOpenChange={setShowNotesSettings} />
-      <Toaster
-        position="bottom-right"
-        theme="dark"
-        toastOptions={{
-          style: {
-            background: 'hsl(25 12% 7%)',
-            border: '1px solid hsl(25 8% 16%)',
-            color: 'hsl(35 20% 88%)',
-          }
-        }}
-      />
+      <Toaster position="bottom-right" theme="dark" toastOptions={{ style: { background: 'hsl(25 12% 7%)', border: '1px solid hsl(25 8% 16%)', color: 'hsl(35 20% 88%)' } }} />
     </TooltipProvider>
   )
 }
