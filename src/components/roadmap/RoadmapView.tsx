@@ -65,6 +65,20 @@ Generate 4-6 phases. Include real, specific resources with actual URLs where pos
   let usedProvider = provider
   let errorHint = ''
 
+  const parseGeminiResponse = (data: any) => {
+    if (!data) return ''
+    const candidate = data?.candidates?.[0]
+    if (!candidate) return ''
+    if (typeof candidate.content === 'string') return candidate.content
+    if (Array.isArray(candidate.content)) {
+      return candidate.content.map((part: any) => (typeof part?.text === 'string' ? part.text : '')).join('')
+    }
+    if (Array.isArray(candidate?.output)) {
+      return candidate.output[0]?.content?.map((part: any) => (typeof part?.text === 'string' ? part.text : '')).join('') || ''
+    }
+    return ''
+  }
+
   if (provider === 'gemini') {
     try {
       const response = await fetch('https://gemini.googleapis.com/v1/models/chat-bison-001:generate', {
@@ -95,11 +109,10 @@ Generate 4-6 phases. Include real, specific resources with actual URLs where pos
         throw new Error(`Gemini API error: ${response.status}${bodyText ? ` — ${bodyText}` : ''}`)
       }
       const data = await response.json()
-      const candidate = data?.candidates?.[0]
-      if (candidate?.content) {
-        fullText = candidate.content.map((part: any) => part.text || '').join('')
-      } else if (candidate?.output?.[0]?.content) {
-        fullText = candidate.output[0].content.map((part: any) => part.text || '').join('')
+      fullText = parseGeminiResponse(data)
+      if (!fullText && fallbackOpenRouterKey) {
+        usedProvider = 'openrouter'
+        errorHint = 'Gemini returned no usable response in the browser. Falling back to OpenRouter.'
       }
     } catch (fetchError: any) {
       const message = String(fetchError?.message || '')
@@ -110,6 +123,19 @@ Generate 4-6 phases. Include real, specific resources with actual URLs where pos
         throw new Error('Gemini browser requests are not supported directly by many browsers due to CORS restrictions. Please switch to OpenRouter or use a server-side proxy.')
       }
     }
+  }
+
+  const parseOpenRouterResponse = (data: any) => {
+    if (!data) return ''
+    if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text
+    const choice = data?.choices?.[0]
+    if (!choice) return ''
+    if (typeof choice?.text === 'string' && choice.text.trim()) return choice.text
+    if (typeof choice?.message?.content === 'string' && choice.message.content.trim()) return choice.message.content
+    if (Array.isArray(choice?.message?.content)) {
+      return choice.message.content.map((part: any) => (typeof part?.text === 'string' ? part.text : '')).join('')
+    }
+    return ''
   }
 
   if (usedProvider === 'openrouter') {
@@ -144,7 +170,7 @@ Generate 4-6 phases. Include real, specific resources with actual URLs where pos
     }
 
     const data = await response.json()
-    const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || ''
+    const content = parseOpenRouterResponse(data)
     if (content) {
       fullText = content
       onChunk(content)
