@@ -104,33 +104,21 @@ Generate 4-6 phases. Include real, specific resources with actual URLs where pos
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Create a comprehensive learning roadmap for: "${topic}"\n\nContext: I'm a digital marketing professional in Bangladesh working on B2B SaaS (CRM, SFA, ERP). Make it practical and career-relevant.` },
         ],
-        stream: true,
         max_tokens: 3000,
         temperature: 0.7,
       }),
     })
 
-    if (!response.ok) throw new Error(`API error: ${response.status}`)
+    if (!response.ok) {
+      const bodyText = await response.text().catch(() => '')
+      throw new Error(`API error: ${response.status}${bodyText ? ` — ${bodyText}` : ''}`)
+    }
 
-    const reader = response.body?.getReader()
-    const decoder = new TextDecoder()
-
-    if (reader) {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value)
-        const lines = chunk.split('\n').filter(l => l.startsWith('data: '))
-        for (const line of lines) {
-          const data = line.slice(6)
-          if (data === '[DONE]') break
-          try {
-            const parsed = JSON.parse(data)
-            const content = parsed.choices?.[0]?.delta?.content || ''
-            if (content) { fullText += content; onChunk(content) }
-          } catch {}
-        }
-      }
+    const data = await response.json()
+    const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || ''
+    if (content) {
+      fullText = content
+      onChunk(content)
     }
   }
 
