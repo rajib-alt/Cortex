@@ -32,7 +32,7 @@ const FREE_MODELS = [
   'openai/gpt-oss-120b:free',
 ]
 
-async function generateRoadmap(topic: string, apiKey: string, provider: 'openrouter' | 'gemini', onChunk: (t: string) => void): Promise<RoadmapData> {
+async function generateRoadmap(topic: string, apiKey: string, provider: 'openrouter' | 'gemini', onChunk: (t: string) => void, fallbackOpenRouterKey?: string): Promise<RoadmapData> {
   const systemPrompt = `You are an expert learning roadmap creator. Generate a detailed, practical learning roadmap as valid JSON only — no markdown fences, no explanation outside the JSON.
 
 The JSON must match this exact structure:
@@ -62,47 +62,64 @@ The JSON must match this exact structure:
 Generate 4-6 phases. Include real, specific resources with actual URLs where possible. Be opinionated and practical.`
 
   let fullText = ''
+  let usedProvider = provider
+  let errorHint = ''
 
   if (provider === 'gemini') {
-    const response = await fetch('https://gemini.googleapis.com/v1/models/chat-bison-001:generate', {
-      method: 'POST',
-      mode: 'cors',
-      cache: 'no-cache',
-      redirect: 'follow',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        instances: [
-          {
-            content: [
-              { type: 'text', text: systemPrompt },
-              { type: 'text', text: `Create a comprehensive learning roadmap for: "${topic}"\n\nContext: I'm a digital marketing professional in Bangladesh working on B2B SaaS (CRM, SFA, ERP). Make it practical and career-relevant.` },
-            ],
-          },
-        ],
-        parameters: { temperature: 0.7, max_output_tokens: 3000 },
-      }),
-    })
+    try {
+      const response = await fetch('https://gemini.googleapis.com/v1/models/chat-bison-001:generate', {
+        method: 'POST',
+        mode: 'cors',
+        cache: 'no-cache',
+        redirect: 'follow',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          instances: [
+            {
+              content: [
+                { type: 'text', text: systemPrompt },
+                { type: 'text', text: `Create a comprehensive learning roadmap for: "${topic}"\n\nContext: I'm a digital marketing professional in Bangladesh working on B2B SaaS (CRM, SFA, ERP). Make it practical and career-relevant.` },
+              ],
+            },
+          ],
+          parameters: { temperature: 0.7, max_output_tokens: 3000 },
+        }),
+      })
 
-    if (!response.ok) throw new Error(`API error: ${response.status}`)
-    const data = await response.json()
-    const candidate = data?.candidates?.[0]
-    if (candidate?.content) {
-      fullText = candidate.content.map((part: any) => part.text || '').join('')
-    } else if (candidate?.output?.[0]?.content) {
-      fullText = candidate.output[0].content.map((part: any) => part.text || '').join('')
+      if (!response.ok) {
+        const bodyText = await response.text().catch(() => '')
+        throw new Error(`Gemini API error: ${response.status}${bodyText ? ` — ${bodyText}` : ''}`)
+      }
+      const data = await response.json()
+      const candidate = data?.candidates?.[0]
+      if (candidate?.content) {
+        fullText = candidate.content.map((part: any) => part.text || '').join('')
+      } else if (candidate?.output?.[0]?.content) {
+        fullText = candidate.output[0].content.map((part: any) => part.text || '').join('')
+      }
+    } catch (fetchError: any) {
+      const message = String(fetchError?.message || '')
+      if (fallbackOpenRouterKey && (message.toLowerCase().includes('failed to fetch') || message.toLowerCase().includes('networkerror') || message.toLowerCase().includes('cors'))) {
+        usedProvider = 'openrouter'
+        errorHint = 'Gemini browser requests are often blocked by CORS/network restrictions. Falling back to OpenRouter.'
+      } else {
+        throw new Error(message || 'Gemini request failed. Gemini is not reliably available from the browser without a proxy. Use OpenRouter or a server-side proxy.')
+      }
     }
-  } else {
+  }
+
+  if (usedProvider === 'openrouter') {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       mode: 'cors',
       cache: 'no-cache',
       redirect: 'follow',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${usedProvider === 'openrouter' ? (fallbackOpenRouterKey || apiKey) : apiKey}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
@@ -119,7 +136,7 @@ Generate 4-6 phases. Include real, specific resources with actual URLs where pos
 
     if (!response.ok) {
       const bodyText = await response.text().catch(() => '')
-      throw new Error(`API error: ${response.status}${bodyText ? ` — ${bodyText}` : ''}`)
+      throw new Error(`OpenRouter API error: ${response.status}${bodyText ? ` — ${bodyText}` : ''}`)
     }
 
     const data = await response.json()
@@ -128,6 +145,10 @@ Generate 4-6 phases. Include real, specific resources with actual URLs where pos
       fullText = content
       onChunk(content)
     }
+  }
+
+  if (!fullText) {
+    throw new Error('No response content received from the AI provider.')
   }
 
   // Try to extract JSON from the response
@@ -275,7 +296,7 @@ export default function RoadmapView() {
     try {
       const result = await generateRoadmap(query.trim(), apiKey, provider, (chunk) => {
         setStreamText(t => t + chunk)
-      })
+      }, openRouterKey)
       setRoadmap(result)
     } catch (e: any) {
       const message = e?.message || 'Failed to generate roadmap. Try a different model key.'
